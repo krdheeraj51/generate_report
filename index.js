@@ -20,42 +20,23 @@ async function taskExecution(){
 
 async function createWorkBookwithSampleData(data){
     // 2. Create a Excel file and write data into it
-    // console.log("Print Sample Data :",data);
     const workbook = new ExcelJS.Workbook();
-    const workbookSheet = workbook.addWorksheet('View');
-    // add data inside sheet
-   
+    const workbookSheet = workbook.addWorksheet('View',{
+        views: [{ state: "frozen", ySplit: 1, xSplit:9 }]
+    });
+    // get weekdays 
     const weekDaysArray= await getWeekDaysArray(data);
-   
+    // create Column names
     let columnNames= await getColumnNames(data[0],weekDaysArray);
-    // columnNames.push(planningWeekDaysArray);
-    // console.log("Columns ***  :",columnNames)
     workbookSheet.columns = columnNames;
     let rowsData= await addRowsToSheet(data);
     await workbookSheet.addRows(rowsData);
-    
-
-    await completePlanningData(workbookSheet,data,weekDaysArray)
-
-    
-
-
-
-
-
-
-
-    // const rowOfRows= rowsData.length;
-   
-   /**
-    * Calculate weeks days 
-    */
-
+    await completeReportData(workbookSheet,data,weekDaysArray)
     // save under export.xlsx
     await workbook.xlsx.writeFile('./outPut/generateReport.xlsx');
 }
 
-async function completePlanningData(workbookSheet,data,wekDaysArray){
+async function completeReportData(workbookSheet,data,wekDaysArray){
     let columnCount =_.values(data[0]).length + 1;
     const format='DD-MMM';
     const plStArray=[];
@@ -128,6 +109,9 @@ async function findIndexRange(startDate,endDate,weekDaysList,colCount,index){
 
 
 async function getWeekDaysArray(data){
+    /**
+    * Calculate weeks days 
+    */
     const PlaningDateArray=[];
     const shadowDateArray=[];
     const kADateArray=[];
