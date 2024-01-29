@@ -22,7 +22,7 @@ async function createWorkBookwithSampleData(data){
     // 2. Create a Excel file and write data into it
     const workbook = new ExcelJS.Workbook();
     const workbookSheet = workbook.addWorksheet('View',{
-        views: [{ state: "frozen", ySplit: 1, xSplit:9 }]
+        views: [{ state: "frozen", ySplit: 1, xSplit:15 }]
     });
     // get weekdays 
     const weekDaysArray= await getWeekDaysArray(data);
@@ -30,18 +30,57 @@ async function createWorkBookwithSampleData(data){
     let columnNames= await getColumnNames(data[0],weekDaysArray);
     workbookSheet.columns = columnNames;
     let rowsData= await addRowsToSheet(data);
-    await workbookSheet.addRows(rowsData);
-    await completeReportData(workbookSheet,data,weekDaysArray)
-    // save under export.xlsx
-    await workbook.xlsx.writeFile('./outPut/generateReport.xlsx');
+
+
+   
+    await workbookSheet.addRows(rowsData,'n');
+    await completeReportData(workbookSheet,data,weekDaysArray);
+    await formatExcelData(workbookSheet,data.length+1);
+   
+   
+    await workbook.xlsx.writeFile('./outPut/generateReport.xlsx').then(()=>{
+        console.log("Excel file has been generated successfully ...")
+    });
+}
+
+
+
+async function formatExcelData (workbookSheet,noOfRows){
+    await convertTextToNumber(workbookSheet,noOfRows);
+    await convertTextToDate(workbookSheet,noOfRows);
+
+}
+async function convertTextToNumber(workbookSheet,noOfRows){
+    console.log("noOfRows :",noOfRows);
+    let columnIndex= ['B','C','D','E','F'];
+  for (let column of columnIndex){
+   for(rowIndex=2;rowIndex <= noOfRows; rowIndex++){
+       const cell= workbookSheet.getCell(`${column}${rowIndex}`);
+       let stringValue= cell.text;
+       if(/^\d+$/.test(stringValue)){
+        cell.value=parseInt(stringValue,10)
+    }
+  }
+ }
+}
+
+async function convertTextToDate(workbookSheet,noOfRows){
+    let columnIndex= ['G','H','I','J','K','L','M','N','O'];
+  for (let column of columnIndex){
+   for(rowIndex=2;rowIndex <= noOfRows; rowIndex++){
+       const cell= workbookSheet.getCell(`${column}${rowIndex}`);
+       let dateValue= cell.value;
+       cell.value = moment(dateValue,'DD-MMM-YYYY').format('DD-MMM-YYYY');
+    
+  }
+ }
 }
 
 async function completeReportData(workbookSheet,data,wekDaysArray){
-    let columnCount =_.values(data[0]).length + 1;
-    const format='DD-MMM';
+    let columnCount =_.values(data[0]).length + 2;
+    const format='DD-MMM-YY';
     const plStArray=[];
     const plEndArray=[];
-    console.log("wekDaysArray ::",wekDaysArray);
     for(let rowIndex=0;rowIndex<data.length;rowIndex++){
         let plStartD= moment(data[rowIndex]['Plan Start'],format);
         let plEndD= moment(data[rowIndex]['Plan End'],format);
@@ -51,8 +90,7 @@ async function completeReportData(workbookSheet,data,wekDaysArray){
         let shadowEndD= moment(data[rowIndex]['Shadow End'],format);
         let revStartD= moment(data[rowIndex]['Rev Start'],format);
         let revEndD= moment(data[rowIndex]['Rev End'],format);
-        let goLiveD= moment(data[rowIndex]['Go Live'],format);
-        
+        let goLiveD= revEndD.clone().add(1,'days').format(format);
         const plIndexes= await findIndexRange(plStartD,plEndD,wekDaysArray,columnCount,rowIndex);
         const kaIndexes= await findIndexRange(kaStartD,kaEndD,wekDaysArray,columnCount,rowIndex);
         const shadowIndexes= await findIndexRange(shadowStartD,shadowEndD,wekDaysArray,columnCount,rowIndex);
@@ -89,14 +127,11 @@ async function completeReportData(workbookSheet,data,wekDaysArray){
     }
 }
 async function findIndexRange(startDate,endDate,weekDaysList,colCount,index){
-    const startDateIndex = _.findIndex(weekDaysList,(date)=>moment(date,'DD-MMM').isSame(moment(startDate,'DD-MMM')));;
-    const endDateIndex = _.findLastIndex(weekDaysList,(d)=>moment(d,'DD-MMM').isSameOrBefore(moment(endDate,'DD-MMM')));
-    console.log("startDateIndex ::",startDateIndex);
-    console.log("endDateIndex ::",endDateIndex);
+    const startDateIndex = _.findIndex(weekDaysList,(date)=>moment(startDate,'DD-MMM-YY').isSame(moment(date,'DD-MMM-YY'),'week'));
+    const endDateIndex = _.findLastIndex(weekDaysList,(d)=>moment(d,'DD-MMM-YY').isSameOrBefore(moment(endDate,'DD-MMM-YY')));
     if(startDateIndex !==-1 && endDateIndex!== -1){
         let startCol= await convertNumberExcelColumn(startDateIndex + colCount);
         let endCol= await convertNumberExcelColumn(endDateIndex + colCount);
-        console.log(`${startCol}${index+2}:${endCol}${index+2}`);
         if(startCol === endCol){
             return  `${startCol}${index+2}`
         }
@@ -121,14 +156,15 @@ async function getWeekDaysArray(data){
         const format='DD-MMM-YY';
         let planStartDate= moment(da["Plan Start"],format);
         let planEndDate = moment(da["Plan End"],format);
-        let planCurrentDate = planStartDate.clone();
+        const weekStartDate= moment(planStartDate,format).startOf('isoWeek');
+        const isWeekStart= moment(planStartDate,format).isSame(weekStartDate,);
+        let planCurrentDate = isWeekStart ? planStartDate.clone() : weekStartDate.clone();
         while (planCurrentDate.isSameOrBefore(planEndDate)){
             if(planCurrentDate.day()===1){
                 PlaningDateArray.push(planCurrentDate.clone().format('DD-MMM-YY'));  
             }
             planCurrentDate.add(1,'day');
         }
-
         let shadowStartDate= moment(da["Shadow Start"],format);
         let shadowEndDate = moment(da["Shadow End"],format);
         let shadowCurrentDate = shadowStartDate.clone();
@@ -156,9 +192,8 @@ async function getWeekDaysArray(data){
             }
             revCurrentDate.add(1,'day');
         }
-       let goLiveDate= moment(da["Go Live"],format);    
-       goLiveDateArray.push(goLiveDate.clone().startOf('isoWeek').format('DD-MMM-YY'));
-
+        let goLiveDate= revEndDate.add(1,'days');
+        goLiveDateArray.push(goLiveDate.clone().format('DD-MMM-YY'));
 
     }
     let combinedArray= [...PlaningDateArray,...shadowDateArray,...kADateArray,...revDateArray,...goLiveDateArray];
@@ -168,7 +203,6 @@ async function getWeekDaysArray(data){
 
 
 async function convertNumberExcelColumn(number){
-    console.log("number ::",number);
     let result='';
     while(number >0){
         const remainder= (number -1) % 26;
@@ -182,22 +216,26 @@ async function convertNumberExcelColumn(number){
 async function addRowsToSheet(data){
     let newArray=[];
     for(let i=0;i<data.length;i++){
-       let rowsArray= _.values(data[i]);      
-       newArray.push(rowsArray);
+       let rowsArray= _.values(data[i]);    
+       let lastArrayVal= _.last(rowsArray);
+       const pasreDate= moment(lastArrayVal,'DD-MMM-YY');
+       const goLiveDate= pasreDate.add(1,'days');
+       let updatedArray=[...rowsArray,goLiveDate.format('DD-MMM-YY')];
+       newArray.push(updatedArray);
     }
     return newArray;
 }
 
 async function getColumnNames(data,weekDays){
     let columnArray= _.keys(data);
+    let updateColumnArray=[...columnArray,'Go Live']
     let modifyWeekDaysFormat= _.map(weekDays,(date)=>moment(date,'DD-MMM-YY').format('DD-MMM'));
-    let combinedArray= columnArray.concat(...modifyWeekDaysFormat);
+    let combinedArray= updateColumnArray.concat(...modifyWeekDaysFormat);
     const columnObjArray= _.map(combinedArray,(item,index)=>({
         header: item,
         id: index + 1
     }));
     return columnObjArray;
-
 }
 
 taskExecution();
